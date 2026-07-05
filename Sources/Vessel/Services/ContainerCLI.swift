@@ -87,7 +87,8 @@ struct ContainerCLI: Sendable {
     }
 
     func delete(containerID: String) throws {
-        _ = try CommandRunner.run(["rm", containerID], timeout: 20)
+        // --force also removes running containers; the UI confirms first.
+        _ = try CommandRunner.run(["rm", "--force", containerID], timeout: 60)
     }
 
     func runDetached(image: String, name: String, command: String) throws {

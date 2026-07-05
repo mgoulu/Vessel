@@ -69,7 +69,7 @@ struct ContentView: View {
             Button("Remove", role: .destructive) { viewModel.remove(container.id) }
             Button("Cancel", role: .cancel) {}
         } message: { container in
-            Text("\"\(container.id)\" (\(container.imageName)) will be deleted. This cannot be undone.")
+            Text("\"\(container.id)\" (\(container.imageName)) will be stopped if running and deleted. This cannot be undone.")
         }
     }
 
