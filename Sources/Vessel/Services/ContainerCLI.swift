@@ -71,6 +71,18 @@ struct ContainerCLI: Sendable {
         }
         _ = try CommandRunner.run(args, timeout: 120)
     }
+
+    func builderStart() throws {
+        _ = try CommandRunner.run(["builder", "start"], timeout: 180)
+    }
+
+    func builderStop() throws {
+        _ = try CommandRunner.run(["builder", "stop"], timeout: 60)
+    }
+
+    func build(tag: String, directory: String) throws {
+        _ = try CommandRunner.run(["build", "-t", tag, directory], timeout: 1800)
+    }
 }
 
 enum ProcessListParser {

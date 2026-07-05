@@ -16,6 +16,7 @@ final class AppViewModel: ObservableObject {
     @Published var cpuPercentByID: [String: Double] = [:]
     @Published var historyByID: [String: [UsageSample]] = [:]
     @Published var cliInstalled = CommandRunner.isCLIInstalled
+    @Published var isBuilding = false
 
     private let cli = ContainerCLI()
     private var previousCPU: [String: (usec: Int64, at: Date)] = [:]
@@ -41,7 +42,7 @@ final class AppViewModel: ObservableObject {
             async let imageRecords = run { try self.cli.images() }
 
             systemStatus = (try? await status) ?? "container system is not available"
-            containers = try await records
+            containers = Self.visible(try await records)
             images = (try? await imageRecords) ?? []
             updateStats((try? await stats) ?? [])
 
@@ -61,7 +62,7 @@ final class AppViewModel: ObservableObject {
         do {
             async let recordsTask = run { try self.cli.listContainers() }
             async let statsTask = run { try self.cli.stats() }
-            containers = try await recordsTask
+            containers = Self.visible(try await recordsTask)
             updateStats((try? await statsTask) ?? [])
             if selectedContainerID != nil {
                 await refreshSelected()
@@ -152,6 +153,33 @@ final class AppViewModel: ObservableObject {
 
     func runContainer(image: String, name: String, command: String) {
         performAction { try self.cli.runDetached(image: image, name: name, command: command) }
+    }
+
+    /// Builds an image from a Dockerfile directory. The BuildKit builder VM is
+    /// started just for the build and stopped right after, so it never lingers.
+    func buildImage(tag: String, directory: String) async -> Bool {
+        isBuilding = true
+        defer { isBuilding = false }
+
+        var succeeded = false
+        do {
+            try await run { try self.cli.builderStart() }
+            try await run { try self.cli.build(tag: tag, directory: directory) }
+            lastError = nil
+            succeeded = true
+        } catch {
+            lastError = error.localizedDescription
+        }
+        _ = try? await run { try self.cli.builderStop() }
+        await refreshAllAsync()
+        return succeeded
+    }
+
+    /// The BuildKit builder shim is infrastructure, not a user container — keep it out of the UI.
+    private static func visible(_ records: [ContainerRecord]) -> [ContainerRecord] {
+        records.filter {
+            $0.id != "buildkit" && !$0.imageName.hasPrefix("ghcr.io/apple/container-builder-shim")
+        }
     }
 
     private func performAction(_ action: @escaping @Sendable () throws -> Void) {
