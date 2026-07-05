@@ -163,10 +163,18 @@ private struct ContainerRow: View {
                         .lineLimit(1)
                     StatusDot(state: container.state)
                 }
-                Text(container.imageName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(container.imageName)
+                        .lineLimit(1)
+                    ForEach(container.publishedPorts, id: \.self) { port in
+                        Text(port.summary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.quaternary.opacity(0.6), in: Capsule())
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 8)
@@ -263,6 +271,21 @@ struct ContainerDetailView: View {
                     .tint(.green)
             }
 
+            if !container.publishedPorts.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("PORTS").font(.caption2).foregroundStyle(.tertiary)
+                    ForEach(container.publishedPorts, id: \.self) { port in
+                        if let url = port.localURL {
+                            Link("\(port.summary) ↗", destination: url)
+                                .font(.system(.caption, design: .monospaced).weight(.medium))
+                        } else {
+                            Text(port.summary)
+                                .font(.system(.caption, design: .monospaced).weight(.medium))
+                        }
+                    }
+                }
+            }
+
             Spacer()
 
             VStack(spacing: 8) {
@@ -311,10 +334,10 @@ struct ContainerDetailView: View {
                                 Text(process.command)
                                     .lineLimit(1)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                Text(process.cpu.map { "\($0)%" } ?? "—")
+                                Text(process.cpu ?? "—")
                                     .frame(width: 44, alignment: .trailing)
-                                Text(process.memory.map { "\($0)%" } ?? "—")
-                                    .frame(width: 44, alignment: .trailing)
+                                Text(process.memory ?? "—")
+                                    .frame(width: 52, alignment: .trailing)
                             }
                             .font(.system(.caption, design: .monospaced))
                             .padding(.vertical, 5)

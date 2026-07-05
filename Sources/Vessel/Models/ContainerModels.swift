@@ -13,6 +13,10 @@ struct ContainerRecord: Decodable, Identifiable, Hashable, Sendable {
         guard let initProcess = configuration?.initProcess else { return "—" }
         return ([initProcess.executable] + initProcess.arguments).joined(separator: " ")
     }
+
+    var publishedPorts: [PublishedPort] {
+        configuration?.publishedPorts ?? []
+    }
 }
 
 struct ContainerConfiguration: Decodable, Hashable, Sendable {
@@ -46,7 +50,21 @@ struct PlatformInfo: Decodable, Hashable, Sendable {
     let os: String?
 }
 
-struct PublishedPort: Decodable, Hashable, Sendable {}
+struct PublishedPort: Decodable, Hashable, Sendable {
+    let containerPort: Int?
+    let hostPort: Int?
+    let proto: String?
+    let hostAddress: String?
+
+    var summary: String {
+        "\(hostPort.map(String.init) ?? "?"):\(containerPort.map(String.init) ?? "?")/\(proto ?? "tcp")"
+    }
+
+    var localURL: URL? {
+        guard let hostPort else { return nil }
+        return URL(string: "http://localhost:\(hostPort)")
+    }
+}
 
 struct ResourceLimits: Decodable, Hashable, Sendable {
     let cpus: Double?
