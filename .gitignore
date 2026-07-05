@@ -1,0 +1,12 @@
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+*.xcuserstate
+.DS_Store
+dist/
+Packaging/Assets/AppIcon.iconset/
+.ai/memory/
+.claude/
+.codex/
