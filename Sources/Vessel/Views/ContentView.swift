@@ -271,7 +271,8 @@ struct ContainerDetailView: View {
                     .tint(.green)
             }
 
-            if !container.publishedPorts.isEmpty {
+            let internalPorts = unpublishedListeningPorts(container)
+            if !container.publishedPorts.isEmpty || !internalPorts.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("PORTS").font(.caption2).foregroundStyle(.tertiary)
                     ForEach(container.publishedPorts, id: \.self) { port in
@@ -281,6 +282,19 @@ struct ContainerDetailView: View {
                         } else {
                             Text(port.summary)
                                 .font(.system(.caption, design: .monospaced).weight(.medium))
+                        }
+                    }
+                    // Listeners without a published mapping are still reachable
+                    // via the container's own IP — link them there.
+                    ForEach(internalPorts, id: \.self) { port in
+                        if let ip = container.ipv4Address,
+                           let url = URL(string: "http://\(ip):\(port)") {
+                            Link(":\(String(port)) via \(ip) ↗", destination: url)
+                                .font(.system(.caption, design: .monospaced).weight(.medium))
+                        } else {
+                            Text(":\(String(port)) internal")
+                                .font(.system(.caption, design: .monospaced).weight(.medium))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -300,6 +314,12 @@ struct ContainerDetailView: View {
             .frame(maxWidth: .infinity)
         }
         .padding(14)
+    }
+
+    private func unpublishedListeningPorts(_ container: ContainerRecord) -> [Int] {
+        let published = Set(container.publishedPorts.compactMap(\.containerPort))
+        let listening = Set(viewModel.processes.flatMap(\.listeningPorts))
+        return listening.subtracting(published).sorted()
     }
 
     private var processColumn: some View {

@@ -17,6 +17,17 @@ struct ContainerRecord: Decodable, Identifiable, Hashable, Sendable {
     var publishedPorts: [PublishedPort] {
         configuration?.publishedPorts ?? []
     }
+
+    /// Container's routable IPv4 (Apple container gives each container a real
+    /// IP), without the CIDR suffix — e.g. "192.168.64.14".
+    var ipv4Address: String? {
+        status?.networks?
+            .compactMap(\.ipv4Address)
+            .first?
+            .split(separator: "/")
+            .first
+            .map(String.init)
+    }
 }
 
 struct ContainerConfiguration: Decodable, Hashable, Sendable {
