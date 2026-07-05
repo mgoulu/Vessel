@@ -117,6 +117,13 @@ struct ServiceProcess: Identifiable, Hashable, Sendable {
     let memory: String?
     let command: String
     let arguments: String
+    var listeningPorts: [Int] = []
+
+    var displayName: String {
+        if !command.isEmpty, command != "?" { return command }
+        return arguments.split(separator: " ").first
+            .map { URL(fileURLWithPath: String($0)).lastPathComponent } ?? "?"
+    }
 }
 
 struct ImageRecord: Decodable, Identifiable, Hashable, Sendable {

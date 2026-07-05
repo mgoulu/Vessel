@@ -39,23 +39,36 @@ struct ContainerCLI: Sendable {
     }
 
     func processes(containerID: String) throws -> [ServiceProcess] {
-        // Prefer ps; slim images often ship without it, so fall back to /proc,
-        // which always exists. Tab-delimited because comm may contain spaces.
+        // Three sections: process list (ps, or /proc fallback for slim images),
+        // /proc/net/tcp* for listening sockets, and pid→socket-inode fd map so
+        // the UI can show which process serves which port.
         let script = """
+        echo '###PROCS'
         if command -v ps >/dev/null 2>&1; then
           ps -o pid,ppid,user,stat,%cpu,%mem,comm,args 2>/dev/null || ps -o pid,ppid,user,stat,comm,args
         else
-          printf 'PID\\tRSS\\tCOMM\\tARGS\\n'
+          printf 'PID\\tPPID\\tRSS\\tCOMM\\tARGS\\n'
           self=$$
           for p in /proc/[0-9]*; do
             pid=${p#/proc/}
             [ "$pid" = "$self" ] && continue
             comm=$(cat "$p/comm" 2>/dev/null)
+            ppid=$(grep '^PPid' "$p/status" 2>/dev/null | tr -dc "0-9")
             rss=$(grep VmRSS "$p/status" 2>/dev/null | tr -dc "0-9")
             args=$(tr "\\0" " " < "$p/cmdline" 2>/dev/null)
-            printf '%s\\t%s\\t%s\\t%s\\n' "$pid" "${rss:-0}" "${comm:-?}" "$args"
+            printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$pid" "${ppid:-0}" "${rss:-0}" "${comm:-?}" "$args"
           done
         fi
+        echo '###NET'
+        cat /proc/net/tcp /proc/net/tcp6 2>/dev/null
+        echo '###FDS'
+        for p in /proc/[0-9]*; do
+          pid=${p#/proc/}
+          for fd in "$p"/fd/*; do
+            l=$(readlink "$fd" 2>/dev/null)
+            case "$l" in socket:*) echo "$pid $l" ;; esac
+          done
+        done
         """
         let output = try CommandRunner.run(["exec", containerID, "sh", "-c", script], timeout: 10).stdout
         return ProcessListParser.parse(output)
@@ -104,28 +117,75 @@ struct ContainerCLI: Sendable {
 
 enum ProcessListParser {
     static func parse(_ text: String) -> [ServiceProcess] {
-        let lines = text
-            .split(separator: "\n")
-            .map(String.init)
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let sections = split(text)
+        let ports = listeningPortsByPID(net: sections["NET"] ?? [], fds: sections["FDS"] ?? [])
+        var processes = parseProcesses(sections["PROCS"] ?? allLines(text))
+        for index in processes.indices {
+            processes[index].listeningPorts = (ports[processes[index].pid] ?? []).sorted()
+        }
+        return processes
+    }
 
+    private static func allLines(_ text: String) -> [String] {
+        text.split(separator: "\n").map(String.init)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    private static func split(_ text: String) -> [String: [String]] {
+        var sections: [String: [String]] = [:]
+        var current: String?
+        for line in allLines(text) {
+            if line.hasPrefix("###") {
+                current = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            } else if let current {
+                sections[current, default: []].append(line)
+            }
+        }
+        return sections
+    }
+
+    /// Joins /proc/net/tcp* LISTEN sockets (state 0A) with pid→socket-inode fds.
+    private static func listeningPortsByPID(net: [String], fds: [String]) -> [String: Set<Int>] {
+        var portByInode: [String: Int] = [:]
+        for line in net {
+            let fields = line.split(separator: " ").map(String.init)
+            guard fields.count > 9, fields[3] == "0A" else { continue }
+            let local = fields[1].split(separator: ":")
+            guard let hexPort = local.last, let port = Int(hexPort, radix: 16) else { continue }
+            portByInode[fields[9]] = port
+        }
+
+        var result: [String: Set<Int>] = [:]
+        for line in fds {
+            // "26 socket:[3099]"
+            let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let inode = parts[1].filter(\.isNumber)
+            if let port = portByInode[inode] {
+                result[parts[0], default: []].insert(port)
+            }
+        }
+        return result
+    }
+
+    private static func parseProcesses(_ lines: [String]) -> [ServiceProcess] {
         guard let header = lines.first else { return [] }
 
-        // /proc fallback mode: tab-delimited PID/RSS/COMM/ARGS, memory in KB.
+        // /proc fallback mode: tab-delimited, memory in KB.
         if header.hasPrefix("PID\t") {
             return lines.dropFirst().compactMap { line -> ServiceProcess? in
-                let parts = line.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
-                guard parts.count >= 3 else { return nil }
-                let rssKB = Int64(parts[1]) ?? 0
+                let parts = line.split(separator: "\t", maxSplits: 4, omittingEmptySubsequences: false).map(String.init)
+                guard parts.count >= 4 else { return nil }
+                let rssKB = Int64(parts[2]) ?? 0
                 return ServiceProcess(
                     pid: parts[0],
-                    parentPID: "—",
+                    parentPID: parts[1],
                     user: "—",
                     state: "",
                     cpu: nil,
                     memory: rssKB > 0 ? ByteFormat.string(rssKB * 1024) : nil,
-                    command: parts[2],
-                    arguments: parts.count > 3 ? parts[3].trimmingCharacters(in: .whitespaces) : ""
+                    command: parts[3],
+                    arguments: parts.count > 4 ? parts[4].trimmingCharacters(in: .whitespaces) : ""
                 )
             }
             .sorted { (Int($0.pid) ?? 0) < (Int($1.pid) ?? 0) }

@@ -329,14 +329,23 @@ struct ContainerDetailView: View {
 
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(viewModel.processes) { process in
-                            HStack {
-                                Text(process.command)
+                        ForEach(processTree, id: \.process.pid) { entry in
+                            HStack(spacing: 6) {
+                                Text(entry.process.displayName)
+                                    .fontWeight(entry.depth == 0 ? .semibold : .regular)
                                     .lineLimit(1)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                Text(process.cpu ?? "—")
+                                    .padding(.leading, CGFloat(entry.depth) * 14)
+                                    .help(entry.process.arguments)
+                                ForEach(entry.process.listeningPorts, id: \.self) { port in
+                                    Text(":\(String(port))")
+                                        .foregroundStyle(.blue)
+                                        .padding(.horizontal, 4)
+                                        .background(.blue.opacity(0.12), in: Capsule())
+                                }
+                                Spacer(minLength: 4)
+                                Text(entry.process.cpu ?? "—")
                                     .frame(width: 44, alignment: .trailing)
-                                Text(process.memory ?? "—")
+                                Text(entry.process.memory ?? "—")
                                     .frame(width: 52, alignment: .trailing)
                             }
                             .font(.system(.caption, design: .monospaced))
@@ -350,6 +359,34 @@ struct ContainerDetailView: View {
             }
         }
         .card()
+    }
+
+    // Parent→child ordering with indentation so the column reads like a
+    // service tree: the init process on top, what it spawned nested below.
+    private var processTree: [(process: ServiceProcess, depth: Int)] {
+        let processes = viewModel.processes
+        let byPID = Dictionary(processes.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        var children: [String: [ServiceProcess]] = [:]
+        var roots: [ServiceProcess] = []
+        for process in processes {
+            if process.parentPID != process.pid, byPID[process.parentPID] != nil {
+                children[process.parentPID, default: []].append(process)
+            } else {
+                roots.append(process)
+            }
+        }
+
+        var ordered: [(process: ServiceProcess, depth: Int)] = []
+        var visited = Set<String>()
+        func walk(_ process: ServiceProcess, _ depth: Int) {
+            guard visited.insert(process.pid).inserted else { return }
+            ordered.append((process, depth))
+            for child in children[process.pid] ?? [] {
+                walk(child, min(depth + 1, 3))
+            }
+        }
+        for root in roots { walk(root, 0) }
+        return ordered
     }
 
     private var chartsColumn: some View {
