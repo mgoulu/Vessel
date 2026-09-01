@@ -216,6 +216,7 @@ struct ContainerDetailView: View {
     @ObservedObject var viewModel: AppViewModel
     let containerID: String
     @State private var imageToRemove: ImageRecord?
+    @State private var showingPruneConfirmation = false
 
     private var container: ContainerRecord? {
         viewModel.containers.first { $0.id == containerID }
@@ -273,6 +274,18 @@ struct ContainerDetailView: View {
             } message: { image in
                 Text("\"\(image.name)\" will be removed from local storage. This cannot be undone.")
             }
+            .confirmationDialog(
+                "Remove all unused images?",
+                isPresented: $showingPruneConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Remove unused images", role: .destructive) {
+                    viewModel.pruneUnusedImages()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes cached and stored images not used by any container, across all projects. Images referenced by a container are kept.")
+            }
         } else {
             ContentUnavailableView("Container removed", systemImage: "shippingbox")
         }
@@ -305,6 +318,26 @@ struct ContainerDetailView: View {
                         }
                     }
                 }
+            }
+
+            Divider()
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Free unused image storage")
+                        .font(.caption.weight(.semibold))
+                    Text("Keeps every image referenced by a container.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Remove unused", systemImage: "trash", role: .destructive) {
+                    showingPruneConfirmation = true
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .disabled(viewModel.isLoading || viewModel.images.isEmpty)
+                .help("Remove unused images across all projects")
             }
         }
         .card()

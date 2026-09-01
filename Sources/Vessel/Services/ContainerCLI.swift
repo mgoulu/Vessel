@@ -34,6 +34,10 @@ struct ContainerCLI: Sendable {
         _ = try CommandRunner.run(["image", "delete", name], timeout: 60)
     }
 
+    func pruneUnusedImages() throws {
+        _ = try CommandRunner.run(["image", "prune", "--all"], timeout: 300)
+    }
+
     func inspect(containerID: String) throws -> String {
         try CommandRunner.run(["inspect", containerID]).stdout
     }

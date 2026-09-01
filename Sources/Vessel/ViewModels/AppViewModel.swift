@@ -148,6 +148,9 @@ final class AppViewModel: ObservableObject {
     func removeImage(_ name: String) {
         performAction { try self.cli.deleteImage(named: name) }
     }
+    func pruneUnusedImages() {
+        performAction { try self.cli.pruneUnusedImages() }
+    }
 
     func ensureSystemRunning() async {
         guard cliInstalled else { return }
