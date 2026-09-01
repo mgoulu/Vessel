@@ -12,7 +12,7 @@ struct ContentView: View {
     private static let chromeHeight: CGFloat = 46
     private static let minHeight: CGFloat = 220
     private static let maxHeight: CGFloat = 640
-    private static let detailSize = CGSize(width: 920, height: 560)
+    private static let detailSize = CGSize(width: 920, height: 700)
 
     private var windowWidth: CGFloat {
         openContainerID == nil ? Self.listWidth : Self.detailSize.width
@@ -215,6 +215,7 @@ private struct ContainerRow: View {
 struct ContainerDetailView: View {
     @ObservedObject var viewModel: AppViewModel
     let containerID: String
+    @State private var imageToRemove: ImageRecord?
 
     private var container: ContainerRecord? {
         viewModel.containers.first { $0.id == containerID }
@@ -224,19 +225,133 @@ struct ContainerDetailView: View {
         viewModel.historyByID[containerID] ?? []
     }
 
+    private var projectName: String {
+        container.map { ImageRecord.projectName(from: $0.imageName) } ?? ""
+    }
+
+    private var projectImages: [ImageRecord] {
+        viewModel.images.filter { $0.projectName == projectName }
+    }
+
+    private var sortedImages: [ImageRecord] {
+        projectImages.sorted {
+            ($0.configuration?.creationDate ?? "") > ($1.configuration?.creationDate ?? "")
+        }
+    }
+
+    private var totalImageBytes: Int64 {
+        Dictionary(projectImages.map { ($0.digest, $0.sizeBytes) }, uniquingKeysWith: { max($0, $1) })
+            .values.reduce(0, +)
+    }
+
     var body: some View {
         if let container {
-            HStack(alignment: .top, spacing: 14) {
-                infoColumn(container)
-                    .frame(width: 210)
-                processColumn
-                    .frame(width: 270)
-                chartsColumn
-                    .frame(maxWidth: .infinity)
+            VStack(spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
+                    infoColumn(container)
+                        .frame(width: 210)
+                    processColumn
+                        .frame(width: 270)
+                    chartsColumn
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(height: 360)
+
+                imagesCard
             }
             .padding(16)
+            .alert(
+                "Remove stored image?",
+                isPresented: Binding(
+                    get: { imageToRemove != nil },
+                    set: { if !$0 { imageToRemove = nil } }
+                ),
+                presenting: imageToRemove
+            ) { image in
+                Button("Remove", role: .destructive) { viewModel.removeImage(image.name) }
+                Button("Cancel", role: .cancel) {}
+            } message: { image in
+                Text("\"\(image.name)\" will be removed from local storage. This cannot be undone.")
+            }
         } else {
             ContentUnavailableView("Container removed", systemImage: "shippingbox")
+        }
+    }
+
+    private var imagesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Label("\(projectName) images", systemImage: "internaldrive")
+                    .font(.headline)
+                Text("\(projectImages.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(.quaternary, in: Capsule())
+                Spacer()
+                Text(ByteFormat.string(totalImageBytes))
+                    .font(.system(.caption, design: .monospaced).weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            if projectImages.isEmpty {
+                ContentUnavailableView("No stored images for \(projectName)", systemImage: "shippingbox")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(sortedImages) { image in
+                            imageRow(image)
+                        }
+                    }
+                }
+            }
+        }
+        .card()
+    }
+
+    private func imageRow(_ image: ImageRecord) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: image.name == container?.imageName ? "shippingbox.fill" : "shippingbox")
+                .foregroundStyle(image.name == container?.imageName ? .blue : .secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(image.name)
+                    .font(.system(.caption, design: .monospaced).weight(.medium))
+                    .lineLimit(1)
+                    .help(image.name)
+                Text("sha256:\(image.shortDigest)")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: 8)
+
+            if let creationDate = image.configuration?.creationDate,
+               let date = try? Date.ISO8601FormatStyle().parse(creationDate) {
+                Text(date, format: .dateTime.month(.abbreviated).day().year())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 88, alignment: .trailing)
+            }
+
+            Text(ByteFormat.string(image.sizeBytes))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 68, alignment: .trailing)
+
+            Button("Remove image", systemImage: "trash", role: .destructive) {
+                imageToRemove = image
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Remove \(image.name) from local storage")
+        }
+        .padding(.horizontal, 2)
+        .padding(.vertical, 6)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(.separator).frame(height: 1)
         }
     }
 
