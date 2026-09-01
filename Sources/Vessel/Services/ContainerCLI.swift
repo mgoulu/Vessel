@@ -30,6 +30,14 @@ struct ContainerCLI: Sendable {
         return try decoder.decode([ImageRecord].self, from: Data(output.utf8))
     }
 
+    func deleteImage(named name: String) throws {
+        _ = try CommandRunner.run(["image", "delete", name], timeout: 60)
+    }
+
+    func pruneUnusedImages() throws {
+        _ = try CommandRunner.run(["image", "prune", "--all"], timeout: 300)
+    }
+
     func inspect(containerID: String) throws -> String {
         try CommandRunner.run(["inspect", containerID]).stdout
     }

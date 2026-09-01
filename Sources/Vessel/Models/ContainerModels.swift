@@ -138,15 +138,35 @@ struct ServiceProcess: Identifiable, Hashable, Sendable {
 }
 
 struct ImageRecord: Decodable, Identifiable, Hashable, Sendable {
-    let id: String
+    let digest: String
     let configuration: ImageConfiguration?
+    let variants: [ImageVariant]?
 
-    var name: String { configuration?.name ?? id }
+    var id: String { name }
+    var name: String { configuration?.name ?? digest }
+    var sizeBytes: Int64 { variants?.compactMap(\.size).reduce(0, +) ?? 0 }
+    var shortDigest: String { String(digest.prefix(12)) }
+    var projectName: String { Self.projectName(from: name) }
+
+    static func projectName(from reference: String) -> String {
+        let withoutDigest = reference.split(separator: "@", maxSplits: 1).first ?? Substring(reference)
+        let repository = withoutDigest.split(separator: "/").last ?? withoutDigest
+        return String(repository.split(separator: ":", maxSplits: 1).first ?? repository)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case digest = "id"
+        case configuration, variants
+    }
 }
 
 struct ImageConfiguration: Decodable, Hashable, Sendable {
     let creationDate: String?
     let name: String?
+}
+
+struct ImageVariant: Decodable, Hashable, Sendable {
+    let size: Int64?
 }
 
 enum ByteFormat {

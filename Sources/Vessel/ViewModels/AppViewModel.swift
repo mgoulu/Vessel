@@ -145,6 +145,12 @@ final class AppViewModel: ObservableObject {
         if selectedContainerID == containerID { selectedContainerID = nil }
         performAction { try self.cli.delete(containerID: containerID) }
     }
+    func removeImage(_ name: String) {
+        performAction { try self.cli.deleteImage(named: name) }
+    }
+    func pruneUnusedImages() {
+        performAction { try self.cli.pruneUnusedImages() }
+    }
 
     func ensureSystemRunning() async {
         guard cliInstalled else { return }
